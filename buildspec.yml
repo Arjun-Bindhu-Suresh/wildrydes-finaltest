@@ -1,0 +1,22 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 445567116039.dkr.ecr.us-east-1.amazonaws.com
+  build:
+    commands:
+      - echo Building Docker image...
+      - docker build -t arjun-app .
+      - docker tag arjun-app:latest 445567116039.dkr.ecr.us-east-1.amazonaws.com/arjun-app-repo:latest
+  post_build:
+    commands:
+      - echo Pushing Docker image...
+      - docker push 445567116039.dkr.ecr.us-east-1.amazonaws.com/arjun-app-repo:latest
+      - echo Creating imagedefinitions.json...
+      - printf '[{"name":"arjun-app","imageUri":"445567116039.dkr.ecr.us-east-1.amazonaws.com/arjun-app-repo:latest"}]' > imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json

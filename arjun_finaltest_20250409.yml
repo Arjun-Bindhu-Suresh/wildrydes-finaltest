@@ -1,0 +1,327 @@
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Arjun's Final Test - Deploy ECS Fargate App with CI/CD and Monitoring"
+
+Parameters:
+  GitHubOwner:
+    Type: String
+    Default: "your-github-username"
+  GitHubRepo:
+    Type: String
+    Default: "wildrydes-finaltest"
+  GitHubBranch:
+    Type: String
+    Default: "main"
+  GitHubOAuthToken:
+    Type: String
+    NoEcho: true
+  VpcCIDR:
+    Type: String
+    Default: "10.0.0.0/16"
+
+Resources:
+
+  ArjunVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: arjun-vpc
+
+  ArjunInternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  ArjunVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref ArjunVPC
+      InternetGatewayId: !Ref ArjunInternetGateway
+
+  ArjunPublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ArjunVPC
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: arjun-public-subnet-1
+
+  ArjunPublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ArjunVPC
+      AvailabilityZone: !Select [ 1, !GetAZs "" ]
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: arjun-public-subnet-2
+
+  ArjunECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: arjun-app-repo
+
+  ArjunECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: arjun-cluster
+
+  ArjunTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      RoleName: arjun-ecs-execution-role
+
+Outputs:
+  VPCId:
+    Description: "VPC ID"
+    Value: !Ref ArjunVPC
+  ECSCluster:
+    Description: "ECS Cluster Name"
+    Value: !Ref ArjunECSCluster
+  ECRRepo:
+    Description: "ECR Repository"
+    Value: !Ref ArjunECRRepository
+
+  ArjunAppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Arjun ECS Service
+      VpcId: !Ref ArjunVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: arjun-app-sg
+
+  ArjunALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Arjun ALB
+      VpcId: !Ref ArjunVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: arjun-alb-sg
+
+  ArjunALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: arjun-alb
+      Subnets:
+        - !Ref ArjunPublicSubnet1
+        - !Ref ArjunPublicSubnet2
+      SecurityGroups:
+        - !Ref ArjunALBSecurityGroup
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+
+  ArjunALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: arjun-target-group
+      Port: 5000
+      Protocol: HTTP
+      VpcId: !Ref ArjunVPC
+      TargetType: ip
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200
+
+  ArjunALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ArjunALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ArjunALBTargetGroup
+
+  ArjunECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: arjun-task
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ArjunTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: arjun-app
+          Image: 445567116039.dkr.ecr.us-east-1.amazonaws.com/arjun-app-repo:latest
+          PortMappings:
+            - ContainerPort: 5000
+          Essential: true
+
+  ArjunECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ArjunALBListener
+    Properties:
+      Cluster: !Ref ArjunECSCluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref ArjunPublicSubnet1
+            - !Ref ArjunPublicSubnet2
+          SecurityGroups:
+            - !Ref ArjunAppSecurityGroup
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - ContainerName: arjun-app
+          ContainerPort: 5000
+          TargetGroupArn: !Ref ArjunALBTargetGroup
+      TaskDefinition: !Ref ArjunECSTaskDefinition
+
+  ArjunCodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: arjun-codepipeline-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodePipelineAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                  - codebuild:*
+                  - ecs:*
+                  - iam:PassRole
+                  - cloudwatch:*
+                Resource: "*"
+
+  ArjunCodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: arjun-codebuild-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
+
+  ArjunCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: arjun-codebuild-project
+      ServiceRole: !GetAtt ArjunCodeBuildServiceRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:5.0
+        Type: LINUX_CONTAINER
+        PrivilegedMode: true
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yml
+
+  ArjunPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: arjun-codepipeline
+      RoleArn: !GetAtt ArjunCodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Sub "${AWS::StackName}-artifact-store"
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: 1
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                Owner: !Ref GitHubOwner
+                Repo: !Ref GitHubRepo
+                Branch: !Ref GitHubBranch
+                OAuthToken: !Ref GitHubOAuthToken
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: BuildAction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: 1
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                ProjectName: !Ref ArjunCodeBuildProject
+              RunOrder: 1
+        - Name: Deploy
+          Actions:
+            - Name: DeployAction
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: ECS
+                Version: 1
+              InputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                ClusterName: !Ref ArjunECSCluster
+                ServiceName: !Ref ArjunECSService
+                FileName: imagedefinitions.json
+              RunOrder: 1
+
+  ArjunCloudWatchAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: arjun-build-failure
+      MetricName: FailedBuilds
+      Namespace: AWS/CodeBuild
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ProjectName
+          Value: !Ref ArjunCodeBuildProject
