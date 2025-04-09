@@ -86,6 +86,20 @@ Resources:
         - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
       RoleName: arjun-ecs-execution-role
 
+
+  ArjunALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: arjun-alb
+      Subnets:
+        - !Ref ArjunPublicSubnet1
+        - !Ref ArjunPublicSubnet2
+      SecurityGroups:
+        - !Ref ArjunALBSecurityGroup
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+
 Outputs:
   VPCId:
     Description: "VPC ID"
