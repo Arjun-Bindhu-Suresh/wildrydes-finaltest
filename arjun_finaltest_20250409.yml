@@ -87,6 +87,21 @@ Resources:
       RoleName: arjun-ecs-execution-role
 
 
+
+  ArjunALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Arjun ALB
+      VpcId: !Ref ArjunVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: arjun-alb-sg
+
   ArjunALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
