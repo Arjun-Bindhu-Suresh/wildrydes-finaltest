@@ -228,6 +228,28 @@ Resources:
                 FileName: imagedefinitions.json
               RunOrder: 1
 
+
+  ArjunECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ArjunALBListener
+    Properties:
+      Cluster: !Ref ArjunECSCluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref ArjunPublicSubnet1
+            - !Ref ArjunPublicSubnet2
+          SecurityGroups:
+            - !Ref ArjunAppSecurityGroup
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - ContainerName: arjun-app
+          ContainerPort: 5000
+          TargetGroupArn: !Ref ArjunALBTargetGroup
+      TaskDefinition: !Ref ArjunECSTaskDefinition
+
 Outputs:
   VPCId:
     Description: "VPC ID"
