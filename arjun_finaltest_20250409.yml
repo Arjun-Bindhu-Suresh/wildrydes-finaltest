@@ -69,7 +69,7 @@ Resources:
   ArjunECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: arjun-cluster
+      ClusterName: arjun-cluster-finaltest
 
   ArjunTaskExecutionRole:
     Type: AWS::IAM::Role
