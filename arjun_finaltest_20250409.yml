@@ -1,25 +1,25 @@
-AWSTemplateFormatVersion: "2010-09-09"
-Description: "Arjun's Final Test - Deploy ECS Fargate App with CI/CD and Monitoring"
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Arjun's Final Test - Deploy ECS Fargate App with CI/CD and Monitoring
 
 Parameters:
   GitHubOwner:
     Type: String
-    Default: "your-github-username"
+    Default: arjun-github-username
   GitHubRepo:
     Type: String
-    Default: "wildrydes-finaltest"
+    Default: wildrydes-finaltest
   GitHubBranch:
     Type: String
-    Default: "main"
+    Default: main
   GitHubOAuthToken:
     Type: String
     NoEcho: true
   VpcCIDR:
     Type: String
-    Default: "10.0.0.0/16"
+    Default: 10.0.0.0/16
 
 Resources:
-
   ArjunVPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -30,21 +30,12 @@ Resources:
         - Key: Name
           Value: arjun-vpc
 
-  ArjunInternetGateway:
-    Type: AWS::EC2::InternetGateway
-
-  ArjunVPCGatewayAttachment:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      VpcId: !Ref ArjunVPC
-      InternetGatewayId: !Ref ArjunInternetGateway
-
   ArjunPublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref ArjunVPC
-      AvailabilityZone: !Select [ 0, !GetAZs "" ]
       CidrBlock: 10.0.1.0/24
+      AvailabilityZone: us-east-1a
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -54,17 +45,76 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref ArjunVPC
-      AvailabilityZone: !Select [ 1, !GetAZs "" ]
       CidrBlock: 10.0.2.0/24
+      AvailabilityZone: us-east-1b
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: arjun-public-subnet-2
 
-  ArjunECRRepository:
-    Type: AWS::ECR::Repository
+  ArjunALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
-      RepositoryName: arjun-app-repo
+      GroupDescription: Security group for ALB
+      VpcId: !Ref ArjunVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+
+  ArjunALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: arjun-alb-finaltest
+      Subnets:
+        - !Ref ArjunPublicSubnet1
+        - !Ref ArjunPublicSubnet2
+      SecurityGroups:
+        - !Ref ArjunALBSecurityGroup
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+
+  ArjunALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: arjun-alb-tg
+      Port: 5000
+      Protocol: HTTP
+      VpcId: !Ref ArjunVPC
+      TargetType: ip
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200
+
+  ArjunALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ArjunALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ArjunALBTargetGroup
+
+  ArjunAppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for ECS Tasks
+      VpcId: !Ref ArjunVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: arjun-app-sg
 
   ArjunECSCluster:
     Type: AWS::ECS::Cluster
@@ -83,64 +133,44 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
-      RoleName: arjun-ecs-execution-role
 
-
-
-  ArjunALBSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+  ArjunECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
     Properties:
-      GroupDescription: Security Group for Arjun ALB
-      VpcId: !Ref ArjunVPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key: Name
-          Value: arjun-alb-sg
+      Family: arjun-ecs-task
+      Cpu: 256
+      Memory: 512
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ArjunTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: arjun-app
+          Image: 445567116039.dkr.ecr.us-east-1.amazonaws.com/arjun-app-repo:latest
+          PortMappings:
+            - ContainerPort: 5000
+          Essential: true
 
-  ArjunALB:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  ArjunECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ArjunALBListener
     Properties:
-      Name: arjun-alb-finaltest
-      Subnets:
-        - !Ref ArjunPublicSubnet1
-        - !Ref ArjunPublicSubnet2
-      SecurityGroups:
-        - !Ref ArjunALBSecurityGroup
-      Scheme: internet-facing
-      Type: application
-      IpAddressType: ipv4
-
-
-
-  ArjunCodePipelineServiceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: arjun-codepipeline-role
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: codepipeline.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: CodePipelineAccess
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:*
-                  - codebuild:*
-                  - ecs:*
-                  - iam:PassRole
-                  - cloudwatch:*
-                Resource: "*"
+      Cluster: !Ref ArjunECSCluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref ArjunPublicSubnet1
+            - !Ref ArjunPublicSubnet2
+          SecurityGroups:
+            - !Ref ArjunAppSecurityGroup
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - ContainerName: arjun-app
+          ContainerPort: 5000
+          TargetGroupArn: !Ref ArjunALBTargetGroup
+      TaskDefinition: !Ref ArjunECSTaskDefinition
 
   ArjunCodeBuildServiceRole:
     Type: AWS::IAM::Role
@@ -171,6 +201,31 @@ Resources:
       Source:
         Type: CODEPIPELINE
         BuildSpec: buildspec.yml
+
+  ArjunCodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: arjun-codepipeline-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodePipelineAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                  - codebuild:*
+                  - ecs:*
+                  - iam:PassRole
+                  - cloudwatch:*
+                Resource: "*"
 
   ArjunCodePipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -227,86 +282,6 @@ Resources:
                 ServiceName: !Ref ArjunECSService
                 FileName: imagedefinitions.json
               RunOrder: 1
-
-
-  ArjunECSService:
-    Type: AWS::ECS::Service
-    DependsOn: ArjunALBListener
-    Properties:
-      Cluster: !Ref ArjunECSCluster
-      LaunchType: FARGATE
-      DesiredCount: 1
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          Subnets:
-            - !Ref ArjunPublicSubnet1
-            - !Ref ArjunPublicSubnet2
-          SecurityGroups:
-            - !Ref ArjunAppSecurityGroup
-          AssignPublicIp: ENABLED
-      LoadBalancers:
-        - ContainerName: arjun-app
-          ContainerPort: 5000
-          TargetGroupArn: !Ref ArjunALBTargetGroup
-      TaskDefinition: !Ref ArjunECSTaskDefinition
-
-
-  ArjunAppSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security Group for ECS Tasks
-      VpcId: !Ref ArjunVPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 5000
-          ToPort: 5000
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key: Name
-          Value: arjun-app-sg
-
-  ArjunALBTargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      Name: arjun-alb-tg
-      Port: 5000
-      Protocol: HTTP
-      VpcId: !Ref ArjunVPC
-      TargetType: ip
-      HealthCheckPath: /
-      HealthCheckIntervalSeconds: 30
-      HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
-      UnhealthyThresholdCount: 2
-      Matcher:
-        HttpCode: 200
-
-  ArjunALBListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      LoadBalancerArn: !Ref ArjunALB
-      Port: 80
-      Protocol: HTTP
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref ArjunALBTargetGroup
-
-  ArjunECSTaskDefinition:
-    Type: AWS::ECS::TaskDefinition
-    Properties:
-      Family: arjun-ecs-task
-      Cpu: 256
-      Memory: 512
-      NetworkMode: awsvpc
-      RequiresCompatibilities:
-        - FARGATE
-      ExecutionRoleArn: !GetAtt ArjunTaskExecutionRole.Arn
-      ContainerDefinitions:
-        - Name: arjun-app
-          Image: 445567116039.dkr.ecr.us-east-1.amazonaws.com/arjun-app-repo:latest
-          PortMappings:
-            - ContainerPort: 5000
-          Essential: true
 
 Outputs:
   VPCId:
