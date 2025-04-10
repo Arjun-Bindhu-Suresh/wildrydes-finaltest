@@ -292,7 +292,11 @@ Outputs:
     Description: "ECS Cluster Name"
     Value: !Ref ArjunECSCluster
 
-  ECRRepositoryUri:
+  
+ECRRepositoryUri:
+    Description: "ECR Repo URI"
+    Value: !GetAtt ArjunECRRepository.RepositoryUri
+    
     Description: "ECR Repo URI"
     Value: !GetAtt ArjunECRRepository.RepositoryUri
 
