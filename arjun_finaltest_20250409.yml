@@ -283,12 +283,6 @@ Resources:
                 FileName: imagedefinitions.json
               RunOrder: 1
 
-
-  ArjunECRRepository:
-    Type: AWS::ECR::Repository
-    Properties:
-      RepositoryName: arjun-app-repo
-
 Outputs:
   VPCId:
     Description: "VPC ID"
@@ -300,7 +294,7 @@ Outputs:
 
   ECRRepositoryUri:
     Description: "ECR Repo URI"
-    Value: !Ref ArjunECRRepository
+    Value: !GetAtt ArjunECRRepository.RepositoryUri
 
   LoadBalancerDNS:
     Description: "Public DNS of ALB"
