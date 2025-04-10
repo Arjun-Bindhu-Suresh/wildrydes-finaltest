@@ -295,7 +295,7 @@ Outputs:
   
 ECRRepositoryUri:
     Description: "ECR Repo URI"
-    Value: !GetAtt ArjunECRRepository.RepositoryUri
+    Value: !Ref ArjunECRRepository
     
     Description: "ECR Repo URI"
     Value: !GetAtt ArjunECRRepository.RepositoryUri
